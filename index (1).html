@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diabetes Classifier - CS Deep Learning HW</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #fff;
+      color: #222;
+    }
+
+    h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 6px; }
+    .byline { color: #999; font-size: 0.8rem; margin-bottom: 30px; }
+
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 24px 0; }
+
+    .warning {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #7a5800;
+      margin-bottom: 24px;
+    }
+
+    h2 { font-size: 1rem; margin-bottom: 16px; color: #333; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: #444;
+    }
+    .field input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: #4f8ef7;
+      box-shadow: 0 0 0 2px rgba(79,142,247,0.15);
+    }
+    .field .unit {
+      font-size: 0.7rem;
+      color: #aaa;
+      margin-top: 3px;
+    }
+
+    .buttons { display: flex; gap: 10px; margin-bottom: 10px; }
+
+    button {
+      padding: 9px 18px;
+      border-radius: 5px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      color: #333;
+    }
+    button:hover { background: #eaeaea; }
+
+    #predict-btn {
+      background: #4f8ef7;
+      color: #fff;
+      border-color: #4f8ef7;
+      flex: 1;
+    }
+    #predict-btn:hover { background: #3a7de8; }
+    #predict-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #status { font-size: 0.78rem; color: #888; margin-bottom: 20px; }
+
+    #result { display: none; margin-top: 20px; }
+
+    .result-box {
+      padding: 16px 20px;
+      border-radius: 8px;
+      border: 1px solid;
+      margin-bottom: 16px;
+    }
+    .result-box.positive { background: #fff1f0; border-color: #ffa39e; }
+    .result-box.negative { background: #f6ffed; border-color: #b7eb8f; }
+
+    .result-box .verdict { font-size: 1.2rem; font-weight: 600; margin-bottom: 4px; }
+    .result-box.positive .verdict { color: #cf1322; }
+    .result-box.negative .verdict { color: #389e0d; }
+    .result-box .desc { font-size: 0.82rem; color: #555; }
+
+    .prob-label { font-size: 0.8rem; font-weight: 500; margin-bottom: 10px; color: #333; }
+    .prob-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.82rem; }
+    .prob-row .name { width: 130px; color: #555; }
+    .bar-bg { flex: 1; background: #eee; border-radius: 4px; height: 8px; }
+    .bar { height: 8px; border-radius: 4px; transition: width 0.4s; }
+    .bar.neg { background: #52c41a; }
+    .bar.pos { background: #ff4d4f; }
+    .prob-row .pct { width: 42px; text-align: right; color: #333; }
+
+    .model-info {
+      margin-top: 30px;
+      font-size: 0.78rem;
+      color: #999;
+      line-height: 1.8;
+    }
+    .model-info span { color: #555; }
+  </style>
+</head>
+<body>
+
+  <h1>🩺 Diabetes Risk Classifier</h1>
+  <p class="subtitle">Deep Learning Final Project — TorchONNX_HW</p>
+  <p class="byline">PyTorch MLP → ONNX → deployed with ONNX Runtime Web</p>
+
+  <div class="warning">
+    ⚠️ <strong>Disclaimer:</strong> This is a class project for educational purposes only. Not a real medical tool.
+  </div>
+
+  <hr />
+
+  <h2>Enter Patient Data</h2>
+
+  <div class="grid" id="feature-grid"></div>
+
+  <div class="buttons">
+    <button onclick="fillSample()">Fill Example</button>
+    <button id="predict-btn" onclick="predict()" disabled>Predict →</button>
+  </div>
+  <div id="status">Loading model...</div>
+
+  <div id="result">
+    <hr />
+    <div class="result-box" id="result-box">
+      <div class="verdict" id="verdict"></div>
+      <div class="desc"   id="desc"></div>
+    </div>
+    <div class="prob-label">Class Probabilities</div>
+    <div id="prob-bars"></div>
+  </div>
+
+  <hr />
+  <div class="model-info">
+    <div>Dataset: <span>Pima Indians Diabetes (768 samples, 8 features)</span></div>
+    <div>Architecture: <span>MLP — 4 layers (64 → 32 → 16 → 2)</span></div>
+    <div>Framework: <span>PyTorch → ONNX Runtime Web</span></div>
+    <div>Task: <span>Binary Classification (Diabetes Yes/No)</span></div>
+  </div>
+
+<script>
+  const MODEL_PATH  = "diabetes_model.onnx";
+  const SCALER_PATH = "scaler_params.json";
+
+  const SAMPLE = {
+    pregnancies: 6, glucose: 148, blood_pressure: 72,
+    skin_thickness: 35, insulin: 0, bmi: 33.6,
+    diabetes_pedigree: 0.627, age: 50,
+  };
+  const UNITS = {
+    pregnancies: "count", glucose: "mg/dL", blood_pressure: "mm Hg",
+    skin_thickness: "mm", insulin: "μU/mL", bmi: "kg/m²",
+    diabetes_pedigree: "score", age: "years",
+  };
+
+  let session, scalerMean, scalerStd, featureList;
+
+  (async () => {
+    try {
+      const sp = await fetch(SCALER_PATH).then(r => r.json());
+      scalerMean = sp.mean; scalerStd = sp.std; featureList = sp.features;
+    } catch {
+      featureList = Object.keys(SAMPLE);
+      scalerMean  = new Array(featureList.length).fill(0);
+      scalerStd   = new Array(featureList.length).fill(1);
+    }
+    buildGrid();
+
+    try {
+      session = await ort.InferenceSession.create(MODEL_PATH);
+      setStatus("Model ready. Enter values and click Predict.");
+      document.getElementById("predict-btn").disabled = false;
+    } catch {
+      setStatus("⚠ Could not load diabetes_model.onnx — make sure it's in the same folder.");
+    }
+  })();
+
+  function buildGrid() {
+    const grid = document.getElementById("feature-grid");
+    featureList.forEach(f => {
+      const div = document.createElement("div");
+      div.className = "field";
+      div.innerHTML = `
+        <label for="f-${f}">${f.replace(/_/g, " ")}</label>
+        <input id="f-${f}" type="number" step="any" placeholder="0" />
+        <div class="unit">${UNITS[f] || ""}</div>`;
+      grid.appendChild(div);
+    });
+  }
+
+  function fillSample() {
+    featureList.forEach(f => {
+      const el = document.getElementById(`f-${f}`);
+      if (el) el.value = SAMPLE[f] ?? "";
+    });
+  }
+
+  async function predict() {
+    if (!session) return;
+    const raw    = featureList.map(f => parseFloat(document.getElementById(`f-${f}`).value) || 0);
+    const normed = raw.map((v, i) => (v - scalerMean[i]) / (scalerStd[i] || 1));
+    const tensor = new ort.Tensor("float32", new Float32Array(normed), [1, normed.length]);
+
+    let out;
+    try { out = await session.run({ features: tensor }); }
+    catch (e) { setStatus("Error: " + e.message); return; }
+
+    const logits = Array.from(out["logits"].data);
+    const probs  = softmax(logits);
+    const idx    = probs[1] >= 0.5 ? 1 : 0;
+    showResult(idx, probs);
+  }
+
+  function softmax(logits) {
+    const m = Math.max(...logits);
+    const e = logits.map(l => Math.exp(l - m));
+    const s = e.reduce((a, b) => a + b, 0);
+    return e.map(v => v / s);
+  }
+
+  function showResult(idx, probs) {
+    document.getElementById("result").style.display = "block";
+    const box = document.getElementById("result-box");
+    box.className = `result-box ${idx === 1 ? "positive" : "negative"}`;
+    document.getElementById("verdict").textContent = idx === 1 ? "⚠️ Diabetes Risk Detected" : "✅ No Diabetes Detected";
+    document.getElementById("desc").textContent    = idx === 1
+      ? `Model confidence: ${(probs[1]*100).toFixed(1)}% positive. Remember — this is for educational use only.`
+      : `Model confidence: ${(probs[0]*100).toFixed(1)}% negative. Remember — this is for educational use only.`;
+
+    const labels = ["No Diabetes", "Diabetes"];
+    const keys   = ["neg", "pos"];
+    document.getElementById("prob-bars").innerHTML = probs.map((p, i) => `
+      <div class="prob-row">
+        <span class="name">${labels[i]}</span>
+        <div class="bar-bg"><div class="bar ${keys[i]}" style="width:${(p*100).toFixed(1)}%"></div></div>
+        <span class="pct">${(p*100).toFixed(1)}%</span>
+      </div>`).join("");
+  }
+
+  function setStatus(m) { document.getElementById("status").textContent = m; }
+</script>
+</body>
+</html>
